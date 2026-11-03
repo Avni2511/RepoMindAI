@@ -5,7 +5,7 @@ from google.genai import errors
 from .chunking import chunk_repository_files
 from .rag_service import answer_repository_question
 from .github_service import fetch_repository, fetch_repository_files
-
+from .ingestion import ingest_repository as run_ingestion
 from .llm import ask_llm
 
 
@@ -161,5 +161,64 @@ def chunk_repository(request):
     except Exception:
         return Response(
             {"error": "Unable to chunk this repository right now."},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+@api_view(["POST"])
+def ingest_repository_api(request):
+    repo_url = request.data.get("repo_url", "")
+
+    if not isinstance(repo_url, str) or not repo_url.strip():
+        return Response(
+            {"error": "repo_url is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    max_files = request.data.get("max_files", 5)
+
+    if isinstance(max_files, bool):
+        return Response(
+            {"error": "max_files must be an integer between 1 and 50."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        max_files = int(max_files)
+    except (TypeError, ValueError):
+        return Response(
+            {"error": "max_files must be an integer between 1 and 50."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not 1 <= max_files <= 50:
+        return Response(
+            {"error": "max_files must be between 1 and 50."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        result = run_ingestion(
+            repo_url=repo_url.strip(),
+            max_files=max_files,
+        )
+
+        return Response(
+            {
+                "message": "Repository ingested successfully.",
+                **result,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    except ValueError as exc:
+        return Response(
+            {"error": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    except Exception as exc:
+        print("Repository ingestion error:", repr(exc))
+        return Response(
+            {"error": "Unable to ingest this repository right now."},
             status=status.HTTP_502_BAD_GATEWAY,
         )
